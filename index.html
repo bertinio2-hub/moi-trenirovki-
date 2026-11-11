@@ -110,7 +110,7 @@
       if(saved && Array.isArray(saved.sessions)) store={...blank(), ...saved};
     }
   } catch(e) {storageError=true;}
-  const ui={tab:'workout', preview: store.nextWorkout, expanded:new Set(), historyId:null, pressChoices:new Set(), toast:''};
+  const ui={tab:'workout', preview: store.nextWorkout, browsePlans:false, expanded:new Set(), historyId:null, pressChoices:new Set(), toast:''};
   const persist=()=>{ try {localStorage.setItem(KEY,JSON.stringify(store));storageError=false;} catch(e) {storageError=true;} };
   const app=document.getElementById('app');
   const pname = (id) => { const p=PROGRAM.find(p=>p.id===Number(id)); return p ? p.groups.map(g=>g[0].replace('Мышцы ног','Ноги').replace('Грудные мышцы','Грудь').replace('Дельты (плечи)','Плечи')).join(' + ') : 'Пресс'; };
@@ -142,11 +142,22 @@
   }
   function renderWorkout(){
     const s=activeWorkout();
+    if(s && ui.browsePlans) {
+      const p=PROGRAM[ui.preview-1];
+      return `<div class="page-head"><div class="section-kicker">Просмотр программы · 9 комплексов</div><h1>Все тренировки</h1><p>Выбирай любой номер и смотри упражнения. Текущая тренировка №${s.trainingId} не прервётся — подходы, вес и повторы останутся сохранены.</p></div>
+      <div class="mt-2" style="position:sticky;top:8px;z-index:7"><button class="btn primary full" data-action="return-workout">${icon('left')} Вернуться к тренировке №${s.trainingId}</button></div>
+      <section class="mt-3"><div class="tline"><h2 class="section-title" style="margin:0">Выбрать комплекс</h2><span class="tiny">1–9</span></div><div class="grid-pick">${PROGRAM.map(x=>`<button class="pick ${x.id===ui.preview?'active':''}" data-action="preview" data-id="${x.id}" aria-label="Показать упражнения тренировки ${x.id}">${x.id}</button>`).join('')}</div>
+      <div class="card mt-2"><div class="flex between"><div><div class="eyebrow" style="font-size:10px">Программа №${p.id}</div><div class="subhead" style="margin-top:5px">${pname(p.id)}</div></div><span class="pill">${p.groups.reduce((a,g)=>a+g[1].length,0)} упр.</span></div>
+      ${p.groups.map(([g,names])=>`<h3 class="group-title" style="font-size:14px;margin-top:16px">${escapeHtml(g)}</h3><ol class="preview-list" style="margin-top:0">${names.map((n,i)=>`<li><span class="preview-index">${i+1}.</span><span>${escapeHtml(n)}</span></li>`).join('')}</ol>`).join('')}
+      <div class="note mt-2">Только просмотр. Начать другую тренировку можно после завершения текущей.</div></div>
+      <button class="btn ghost full mt-3" data-action="return-workout">${icon('left')} К текущей тренировке №${s.trainingId}</button></section>`;
+    }
     if(s) {
       const c=counts(s);
       return `<div class="page-head"><div class="section-kicker">Занятие в процессе · ${dateFmt(s.startedAt)}</div><h1>Тренировка №${s.trainingId}</h1><p>${pname(s.trainingId)}. Прогресс сохраняется автоматически — можно закрывать приложение между подходами.</p></div>
       <section class="active-banner"><div class="flex between"><span class="pill green">${icon('bolt')} В процессе</span><span class="tiny">${c.exDone} из ${s.exercises.length} упражнений</span></div>
       <div class="progress-track"><div style="width:${c.pct}%"></div></div><div class="progress-meta"><span>${c.done} из ${c.total} подходов</span><span>${c.pct}%</span></div></section>
+      <div class="mt-3"><button class="btn ghost full" data-action="browse-plans">${icon('calendar')} Посмотреть другие тренировки ${icon('right')}</button></div>
       ${renderExercises(s)}<div class="mt-3 stack"><button class="btn primary full" data-action="complete-workout">${icon('check')} Завершить тренировку №${s.trainingId}</button><div class="helper" style="text-align:center">Если некоторые подходы ещё не отмечены, приложение предупредит перед завершением.</div></div>`;
     }
     const p=PROGRAM[ui.preview-1];
@@ -219,14 +230,14 @@
   }
   function beginWorkout(id){
     if(activeWorkout()){toast('Сначала заверши текущую тренировку');return;}
-    const s=createSession('workout',id);store.sessions.push(s);store.activeWorkoutId=s.id;ui.expanded=new Set([s.id+'-'+s.exercises[0].key]);persist();ui.tab='workout';rerender(false);
+    const s=createSession('workout',id);store.sessions.push(s);store.activeWorkoutId=s.id;ui.browsePlans=false;ui.expanded=new Set([s.id+'-'+s.exercises[0].key]);persist();ui.tab='workout';rerender(false);
   }
   function finishSession(type){
     const s=type==='workout'?activeWorkout():activePress();if(!s)return;
     const c=counts(s);
     if(c.done<c.total&&!confirm(`Отмечено ${c.done} из ${c.total} подходов. Завершить тренировку с незаполненными подходами?`))return;
     s.status='completed';s.completedAt=now();
-    if(type==='workout'){store.activeWorkoutId=null;store.nextWorkout=s.trainingId===9?1:s.trainingId+1;ui.preview=store.nextWorkout;ui.tab='workout';}
+    if(type==='workout'){ui.browsePlans=false;store.activeWorkoutId=null;store.nextWorkout=s.trainingId===9?1:s.trainingId+1;ui.preview=store.nextWorkout;ui.tab='workout';}
     else {store.activePressId=null;ui.pressChoices=new Set();ui.tab='press';}
     ui.expanded.clear();persist();rerender(false);toast('Тренировка сохранена в истории');
   }
@@ -234,7 +245,9 @@
   document.addEventListener('click',event=>{
     const el=event.target.closest('[data-action]');if(!el)return;
     const action=el.dataset.action;
-    if(action==='tab'){ui.tab=el.dataset.tab;ui.historyId=null;rerender(false);return;}
+    if(action==='tab'){ui.tab=el.dataset.tab;ui.browsePlans=false;ui.historyId=null;rerender(false);return;}
+     if(action==='browse-plans'){const s=activeWorkout();if(!s)return;ui.browsePlans=true;ui.preview=s.trainingId===9?1:s.trainingId+1;rerender(false);return;}
+     if(action==='return-workout'){ui.browsePlans=false;rerender(false);return;}
     if(action==='preview'){ui.preview=Number(el.dataset.id);rerender(true);return;}
     if(action==='start-next'){beginWorkout(store.nextWorkout);return;}
     if(action==='start-selected'){beginWorkout(Number(el.dataset.id));return;}
