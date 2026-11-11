@@ -206,22 +206,38 @@
         <div class="set-footer"><button class="btn small ghost" data-action="add-set" data-session="${s.id}" data-ex="${i}">${icon('plus')} Подход</button><button class="btn small ghost" data-action="remove-set" data-session="${s.id}" data-ex="${i}" ${ex.sets.length<=1?'disabled':''}>${icon('minus')} Убрать последний</button></div>
         <div class="helper mt-2">Каждая галочка и цифра сохраняются автоматически. Вес можно оставить пустым для упражнений с собственным весом.</div></div>`:''}</article>`;
   }
+  function renderCancelledExercises(s){
+    const groups=[];
+    s.exercises.forEach(ex=>{let g=groups.find(g=>g.name===ex.group);if(!g){g={name:ex.group,items:[]};groups.push(g);}g.items.push(ex);});
+    return groups.map(g=>`<section class="card mt-2"><h3 class="group-title" style="margin-top:0">${escapeHtml(g.name)}</h3>
+      <ol class="preview-list">${g.items.map(ex=>`<li><span>${escapeHtml(ex.name)}
+        <span class="tiny" style="display:block">${ex.sets.filter(set=>set.done).length} отмеченных подходов${summary(ex)?' · '+escapeHtml(summary(ex)):''}</span></span></li>`).join('')}</ol></section>`).join('');
+  }
   function renderHistory(){
     if(ui.historyId){
       const s=sessionById(ui.historyId);
       if(!s){ui.historyId=null;return renderHistory();}
-      const c=counts(s);
+      const c=counts(s),cancelled=s.status==='cancelled';
       return `<button class="btn small ghost mb-2" data-action="history-back">${icon('left')} Назад к истории</button>
-      <div class="page-head"><div class="section-kicker">${dateFmt(s.startedAt)} · ${timeFmt(s.startedAt)}</div><h1>${s.type==='press'?'Пресс':`Тренировка №${s.trainingId}`}</h1><p>${s.type==='press'?'Свободное занятие':pname(s.trainingId)} · ${c.done} из ${c.total} выполненных подходов. Историю можно редактировать.</p></div>
-      ${renderExercises(s)}<div class="mt-3"><button class="btn danger full" data-action="delete-history" data-session="${s.id}">${icon('trash')} Удалить эту запись</button></div>`;
+      <div class="page-head"><div class="section-kicker">${dateFmt(s.startedAt)} · московское время</div>
+      <h1>${s.type==='press'?'Пресс':`Тренировка №${s.trainingId}`}</h1>
+      <p>${cancelled?'Отменено, не засчитано · ':'Завершено · '}${s.type==='press'?'Свободное занятие':pname(s.trainingId)}</p>
+      <p style="margin-top:8px">Начало: ${timeFmt(s.startedAt)} МСК<br>${cancelled?'Отмена':'Завершение'}: ${timeFmt(sessionEnd(s))} МСК<br>Длительность: ${durationFmt(s.startedAt,sessionEnd(s))}</p>
+      <p style="margin-top:8px">${c.done} из ${c.total} отмеченных подходов. ${cancelled?'Отменённая запись доступна только для просмотра.':'При необходимости результаты можно исправить.'}</p></div>
+      ${cancelled?renderCancelledExercises(s):renderExercises(s)}
+      <div class="mt-3"><button class="btn danger full" data-action="delete-history" data-session="${s.id}">${icon('trash')} Удалить эту запись</button></div>`;
     }
-    const items=history();
-    const workouts=items.filter(s=>s.type==='workout').length;
-    const totalSets=items.reduce((a,s)=>a+counts(s).done,0);
-    return `<div class="page-head"><div class="section-kicker">Твои результаты</div><h1>История тренировок</h1><p>Все занятия сохраняются с датой. Можно открыть любое, чтобы увидеть или исправить свои результаты.</p></div>
+    const items=history(),completed=items.filter(s=>s.status==='completed');
+    const workouts=completed.filter(s=>s.type==='workout').length;
+    const totalSets=completed.reduce((a,s)=>a+counts(s).done,0);
+    return `<div class="page-head"><div class="section-kicker">Твои результаты</div><h1>История тренировок</h1>
+      <p>Все даты и часы — по московскому времени. Отменённые занятия видны в истории, но не засчитываются.</p></div>
     <div class="stats-grid"><div class="stat-card"><div class="stat-label">Тренировок завершено</div><div class="stat-value">${workouts}</div></div><div class="stat-card"><div class="stat-label">Выполнено подходов</div><div class="stat-value">${totalSets}</div></div></div>
     <div class="tline"><h2 class="section-title" style="margin:0">Журнал занятий</h2><span class="tiny">${items.length} записей</span></div>
-    ${items.length?items.map(s=>{const c=counts(s);return `<button class="history-card" data-action="history-open" data-session="${s.id}"><div class="flex between"><span class="pill ${s.type==='press'?'':'green'}">${s.type==='press'?'Пресс':`Тренировка №${s.trainingId}`}</span><span class="tiny">${dateFmt(s.startedAt)}</span></div><div class="flex between"><div><div class="history-title">${s.type==='press'?'Свободная тренировка пресса':pname(s.trainingId)}</div><div class="history-sub">${s.exercises.length} упражнений · ${c.done} из ${c.total} подходов</div></div>${icon('right')}</div></button>`}).join(''):`<div class="empty mt-2">${icon('history','large-icon')}<h3>История пока пуста</h3><p>Заверши первую тренировку — результаты появятся здесь автоматически.</p></div>`}`;
+    ${items.length?items.map(s=>{const c=counts(s),cancelled=s.status==='cancelled';return `<button class="history-card" data-action="history-open" data-session="${s.id}">
+      <div class="flex between"><span class="pill ${cancelled?'yellow':s.type==='press'?'':'green'}">${cancelled?'Отменена · ':''}${s.type==='press'?'Пресс':`Тренировка №${s.trainingId}`}</span><span class="tiny">${dateFmt(s.startedAt)}</span></div>
+      <div class="flex between"><div><div class="history-title">${s.type==='press'?'Свободная тренировка пресса':pname(s.trainingId)}</div>
+      <div class="history-sub">${sessionTiming(s)}</div><div class="history-sub">${cancelled?'Не засчитана':`${s.exercises.length} упражнений · ${c.done} из ${c.total} подходов`}</div></div>${icon('right')}</div></button>`}).join(''):`<div class="empty mt-2">${icon('history','large-icon')}<h3>История пока пуста</h3><p>Заверши первую тренировку — результаты появятся здесь автоматически.</p></div>`}`;
   }
   function renderPress(){
     const s=activePress();
