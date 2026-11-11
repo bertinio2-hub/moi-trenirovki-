@@ -118,15 +118,26 @@
   const sessionById=(id)=>store.sessions.find(x=>x.id===id);
   const activeWorkout=()=>sessionById(store.activeWorkoutId);
   const activePress=()=>sessionById(store.activePressId);
-  const dateFmt=(iso)=>{try{return new Date(iso).toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'});}catch{return 'Дата не указана';}};
-  const timeFmt=(iso)=>{try{return new Date(iso).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});}catch{return '';}};
+  const dateFmt=(iso)=>{try{return new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'Europe/Moscow'}).format(new Date(iso));}catch{return 'Дата не указана';}};
+  const timeFmt=(iso)=>{if(!iso)return '—';try{return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Europe/Moscow'}).format(new Date(iso));}catch{return '—';}};
+  const durationFmt=(start,end)=>{
+    if(!start||!end)return '—';
+    const diff=Date.parse(end)-Date.parse(start);
+    if(!Number.isFinite(diff)||diff<0)return '—';
+    const minutes=Math.floor(diff/60000);
+    if(minutes===0)return 'менее 1 мин';
+    const hours=Math.floor(minutes/60),remainder=minutes%60;
+    return hours?(remainder?`${hours} ч ${remainder} мин`:`${hours} ч`):`${minutes} мин`;
+  };
+  const sessionEnd=(s)=>s.completedAt||s.cancelledAt||null;
+  const sessionTiming=(s)=>`Начало ${timeFmt(s.startedAt)} · ${s.status==='cancelled'?'Отмена':'Завершение'} ${timeFmt(sessionEnd(s))} · ${durationFmt(s.startedAt,sessionEnd(s))} · МСК`;
   const counts=(session)=>{
     let done=0,total=0;
     (session?.exercises||[]).forEach(ex=>ex.sets.forEach(s=>{total++;if(s.done)done++;}));
     return {done,total,pct:total?Math.round(100*done/total):0, exDone:(session?.exercises||[]).filter(ex=>ex.sets.length && ex.sets.every(s=>s.done)).length};
   };
-  const history=()=>store.sessions.filter(s=>s.status==='completed').sort((a,b)=>new Date(b.completedAt||b.startedAt)-new Date(a.completedAt||a.startedAt));
-  const lastFor=(name,currentId)=>history().find(s=>s.id!==currentId && s.exercises.some(e=>e.name===name));
+  const history=()=>store.sessions.filter(s=>s.status==='completed'||s.status==='cancelled').sort((a,b)=>new Date(sessionEnd(b)||b.startedAt)-new Date(sessionEnd(a)||a.startedAt));
+  const lastFor=(name,currentId)=>history().find(s=>s.status==='completed' && s.id!==currentId && s.exercises.some(e=>e.name===name));
   const summary=(exercise)=>exercise.sets.filter(s=>s.done||s.reps||s.weight).map(s=>`${s.weight!==''?s.weight+' кг':'вес —'} × ${s.reps||'—'}`).slice(0,4).join(' · ');
   function toast(message){ui.toast=message;const old=document.querySelector('.toast');if(old)old.remove();const el=document.createElement('div');el.className='toast';el.textContent=message;document.body.appendChild(el);setTimeout(()=>{if(el.isConnected)el.remove();},2900);}
   function rerender(preserve=true){let scroll=preserve?window.scrollY:0;app.innerHTML=layout();if(preserve)window.scrollTo(0,scroll);else window.scrollTo(0,0);}
@@ -154,14 +165,16 @@
     }
     if(s) {
       const c=counts(s);
-      return `<div class="page-head"><div class="section-kicker">Занятие в процессе · ${dateFmt(s.startedAt)}</div><h1>Тренировка №${s.trainingId}</h1><p>${pname(s.trainingId)}. Прогресс сохраняется автоматически — можно закрывать приложение между подходами.</p></div>
+      return `<div class="page-head"><div class="section-kicker">Занятие в процессе · ${dateFmt(s.startedAt)}</div><h1>Тренировка №${s.trainingId}</h1><p>${pname(s.trainingId)}. Начало ${timeFmt(s.startedAt)} МСК. Прогресс сохраняется автоматически — можно закрывать приложение между подходами.</p></div>
       <section class="active-banner"><div class="flex between"><span class="pill green">${icon('bolt')} В процессе</span><span class="tiny">${c.exDone} из ${s.exercises.length} упражнений</span></div>
       <div class="progress-track"><div style="width:${c.pct}%"></div></div><div class="progress-meta"><span>${c.done} из ${c.total} подходов</span><span>${c.pct}%</span></div></section>
       <div class="mt-3"><button class="btn ghost full" data-action="browse-plans">${icon('calendar')} Посмотреть другие тренировки ${icon('right')}</button></div>
-      ${renderExercises(s)}<div class="mt-3 stack"><button class="btn primary full" data-action="complete-workout">${icon('check')} Завершить тренировку №${s.trainingId}</button><div class="helper" style="text-align:center">Если некоторые подходы ещё не отмечены, приложение предупредит перед завершением.</div></div>`;
+      ${renderExercises(s)}<div class="mt-3 stack"><button class="btn primary full" data-action="complete-workout">${icon('check')} Завершить тренировку №${s.trainingId}</button>
+       <button class="btn danger full" data-action="cancel-workout">Отменить тренировку №${s.trainingId}</button>
+       <div class="helper" style="text-align:center">Отмена не засчитывает занятие. В следующий раз можно начать этот комплекс заново. Для отмены потребуется подтверждение.</div></div>`;
     }
     const p=PROGRAM[ui.preview-1];
-    const finished=history().filter(s=>s.type==='workout').length;
+    const finished=history().filter(s=>s.type==='workout' && s.status==='completed').length;
     return `<div class="page-head"><div class="section-kicker">Тренировочный цикл · 9 занятий</div><h1>На очереди — №${store.nextWorkout}</h1><p>Тренируйся в удобные дни. После девятой тренировки цикл начнётся сначала.</p></div>
       <section class="hero card"><div class="inner"><div class="flex between"><span class="pill green">Следующая тренировка</span><span class="tiny">Выполнено ранее: ${finished}</span></div><div class="hero-num">${String(store.nextWorkout).padStart(2,'0')}</div><div class="hero-name">${pname(store.nextWorkout)}</div><div class="hero-desc">Выбери тренировку ниже или начни следующую по порядку.</div><button class="btn primary full" data-action="start-next">${icon('bolt')} Начать тренировку №${store.nextWorkout}</button></div></section>
       <section class="mt-3"><div class="tline"><h2 class="section-title" style="margin:0">Выбрать тренировку</h2><span class="tiny">1–9</span></div><div class="grid-pick">${PROGRAM.map(p=>`<button class="pick ${p.id===ui.preview?'active':''}" data-action="preview" data-id="${p.id}" aria-label="Показать тренировку ${p.id}">${p.id}</button>`).join('')}</div>
@@ -220,9 +233,9 @@
     return `<div class="page-head"><div class="section-kicker">Без регистрации и подписок</div><h1>Настройки и данные</h1><p>Все записи хранятся локально в этом браузере на данном устройстве. Они не отправляются на сервер.</p></div>
       <div class="settings-card"><h3>${icon('download')} Резервная копия</h3><p>Скачай файл со всеми тренировками и результатами. Рекомендуем делать копию регулярно, особенно перед сменой телефона или очисткой браузера.</p><button class="btn primary full" data-action="export">${icon('download')} Скачать резервную копию</button></div>
       <div class="settings-card"><h3>${icon('upload')} Восстановить данные</h3><p>Выбери ранее сохранённый JSON-файл. Записи из него добавятся к текущим без удаления уже имеющихся. При совпадении записей сохранятся текущие.</p><input id="backup-file" class="hide" type="file" accept=".json,application/json"><button class="btn full" data-action="import-trigger">${icon('upload')} Выбрать файл резервной копии</button></div>
-      <div class="settings-card"><h3>${icon('info')} Как пользоваться</h3><p>Открой вкладку «Сегодня», начни нужную тренировку, вводи вес и повторы и отмечай подходы. Закрой и снова открой приложение — незавершённая тренировка останется на месте. После занятия нажми «Завершить».</p><p>На вкладке «Пресс» можно заниматься независимо от основного цикла. Запись результатов не требует интернета после загрузки приложения.</p></div>
+      <div class="settings-card"><h3>${icon('info')} Как пользоваться</h3><p>Открой вкладку «Сегодня», начни нужную тренировку, вводи вес и повторы и отмечай подходы. Закрой и снова открой приложение — незавершённая тренировка останется на месте. После занятия нажми «Завершить». Если нужно прервать занятие, нажми «Отменить тренировку» — она не будет засчитана, а следующий номер останется прежним. История показывает начало, окончание и длительность по московскому времени.</p><p>На вкладке «Пресс» можно заниматься независимо от основного цикла. Запись результатов не требует интернета после загрузки приложения.</p></div>
       <div class="settings-card"><h3>${icon('lock')} Конфиденциальность</h3><p>Дневник не использует аккаунты и не собирает персональные данные. При очистке данных сайта браузером записи могут исчезнуть — поэтому важно сохранять резервную копию.</p><button class="btn danger full" data-action="clear-all">${icon('trash')} Удалить все мои данные</button></div>
-      <div class="note mt-2">Версия 1.0 · 9 подтверждённых тренировок · ${store.sessions.length} записей, включая незавершённые. Бесплатно.</div>`;
+      <div class="note mt-2">Версия 1.2 · 9 подтверждённых тренировок · ${store.sessions.length} записей, включая незавершённые. Бесплатно.</div>`;
   }
   function createSession(type,trainingId=null,names=null){
     const exercises=type==='workout'?programEx(trainingId):(names||[]).map(name=>({key:uid(),group:'Пресс',name,sets:Array.from({length:3},()=>({id:uid(),weight:'',reps:'',done:false}))}));
@@ -231,6 +244,14 @@
   function beginWorkout(id){
     if(activeWorkout()){toast('Сначала заверши текущую тренировку');return;}
     const s=createSession('workout',id);store.sessions.push(s);store.activeWorkoutId=s.id;ui.browsePlans=false;ui.expanded=new Set([s.id+'-'+s.exercises[0].key]);persist();ui.tab='workout';rerender(false);
+  }
+  function cancelWorkout(){
+    const s=activeWorkout();if(!s)return;
+    if(!confirm(`Отменить тренировку №${s.trainingId}? Она не будет засчитана. В следующий раз ты сможешь начать её заново с пустыми подходами. Эта отмена сохранится в истории.`))return;
+    s.status='cancelled';s.cancelledAt=now();
+    store.activeWorkoutId=null;store.nextWorkout=s.trainingId;ui.preview=s.trainingId;
+    ui.browsePlans=false;ui.expanded.clear();ui.tab='workout';
+    persist();rerender(false);toast(`Тренировка №${s.trainingId} отменена и осталась следующей.`);
   }
   function finishSession(type){
     const s=type==='workout'?activeWorkout():activePress();if(!s)return;
@@ -257,6 +278,7 @@
     if(action==='add-set'){const [s,ex]=getEx(el);if(!ex)return;const last=ex.sets[ex.sets.length-1];ex.sets.push({id:uid(),weight:last?.weight??'',reps:last?.reps??'',done:false});persist();rerender(true);return;}
     if(action==='remove-set'){const [s,ex]=getEx(el);if(!ex||ex.sets.length<=1)return;ex.sets.pop();persist();rerender(true);return;}
     if(action==='complete-workout'){finishSession('workout');return;}
+    if(action==='cancel-workout'){cancelWorkout();return;}
     if(action==='complete-press'){finishSession('press');return;}
     if(action==='start-press'){if(activePress()||ui.pressChoices.size===0)return;const s=createSession('press',null,[...ui.pressChoices].sort((a,b)=>a-b).map(i=>PRESS[i]));store.sessions.push(s);store.activePressId=s.id;ui.expanded.add(s.id+'-'+s.exercises[0].key);persist();rerender(false);return;}
     if(action==='history-open'){ui.historyId=el.dataset.session;const s=sessionById(ui.historyId);if(s&&s.exercises.length)ui.expanded.add(s.id+'-'+s.exercises[0].key);rerender(false);return;}
@@ -293,7 +315,7 @@
       if(body.format!=='my_training_diary'||!body.data||!Array.isArray(body.data.sessions))throw new Error('Неверный формат резервной копии');
       const parsed=body.data;
       const sessions=parsed.sessions;
-      if(sessions.some(s=>!s||typeof s.id!=='string'||!Array.isArray(s.exercises)||!['press','workout'].includes(s.type)||!['completed','active'].includes(s.status)||s.exercises.some(ex=>!Array.isArray(ex.sets)||typeof ex.name!=='string'||ex.sets.some(set=>typeof set.done!=='boolean'))))throw new Error('Повреждены данные тренировок');
+      if(sessions.some(s=>!s||typeof s.id!=='string'||!Array.isArray(s.exercises)||!['press','workout'].includes(s.type)||!['completed','active','cancelled'].includes(s.status)||s.exercises.some(ex=>!Array.isArray(ex.sets)||typeof ex.name!=='string'||ex.sets.some(set=>typeof set.done!=='boolean'))))throw new Error('Повреждены данные тренировок');
       const unique=new Set(store.sessions.map(s=>s.id));let added=0;
       for(const s of sessions){if(!unique.has(s.id)){store.sessions.push(s);unique.add(s.id);added++;}}
       if(!store.activeWorkoutId && parsed.activeWorkoutId && store.sessions.some(s=>s.id===parsed.activeWorkoutId&&s.status==='active'))store.activeWorkoutId=parsed.activeWorkoutId;
