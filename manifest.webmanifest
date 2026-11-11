@@ -1,0 +1,15 @@
+{
+  "name": "Мои тренировки — дневник",
+  "short_name": "Тренировки",
+  "description": "Дневник из 9 тренировок, весов, подходов и повторений",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#10151e",
+  "theme_color": "#10151e",
+  "icons": [
+    {"src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
