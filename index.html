@@ -265,7 +265,7 @@
       if(d<1||d>days){grid+='<span class="cal-empty" aria-hidden="true"></span>';continue;}
       const key=ui.calendarMonth+'-'+String(d).padStart(2,'0'),records=dayMap.get(key)||[];
       const done=records.filter(s=>s.status==='completed'),cancelled=records.length>0&&!done.length;
-      const tag=done.length?done.slice(0,2).map(s=>s.type==='workout'?s.trainingId:'П').join('·')+(done.length>2?'+':''):cancelled?'×':'';
+      const tag=done.length?(done.length===1?(done[0].type==='workout'?'№'+done[0].trainingId:'П'):done.slice(0,2).map(s=>s.type==='workout'?s.trainingId:'П').join('·')+(done.length>2?'+':'')):cancelled?'×':'';
       const tooltip=records.map(s=>s.status==='cancelled'?'отменена':s.type==='press'?'пресс':`тренировка №${s.trainingId}`).join(', ');
       grid+=`<button class="cal-day ${done.length?'done':cancelled?'cancelled':''} ${key===ui.calendarDay?'chosen':''} ${key===moscowDay(now())?'today':''}" data-action="calendar-day" data-date="${key}" aria-label="${escapeHtml(fmt(key)+': '+(tooltip||'без тренировок'))}" aria-pressed="${key===ui.calendarDay}">
          <span class="cal-num">${d}</span>${tag?`<span class="cal-tag">${escapeHtml(tag)}</span>`:''}</button>`;
@@ -274,7 +274,7 @@
     const details=day?`<section class="cal-detail"><h3>${escapeHtml(fmt(day))}</h3>
        ${records.length?records.map(s=>`<button class="cal-entry" data-action="history-open" data-session="${escapeHtml(s.id)}"><span class="pill ${s.status==='cancelled'?'yellow':s.type==='workout'?'green':''}">${s.status==='cancelled'?'Отменена · ':''}${s.type==='press'?'Пресс':`Тренировка №${s.trainingId}`}</span>
        <div style="font-weight:800;margin-top:8px">${escapeHtml(s.type==='press'?'Упражнения на пресс':pname(s.trainingId))}</div>
-       <div class="entry-sub">${sessionTiming(s)}</div><div class="entry-sub">Открыть результаты →</div></button>`).join(''):'<p class="cal-help">На эту дату тренировок не записано.</p>'}</section>`:
+       <div class="entry-sub">${sessionTiming(s)}</div><div class="entry-sub">${s.status==='cancelled'?'Отменена — не засчитана · открыть запись':'Открыть веса, подходы и повторы →'}</div></button>`).join(''):'<p class="cal-help">На эту дату тренировок не записано.</p>'}</section>`:
        '<p class="cal-help">Нажми на зелёную дату, чтобы открыть тренировку и её результаты.</p>';
     const monthDone=items.filter(s=>s.status==='completed'&&s.type==='workout'&&moscowDay(s.startedAt).startsWith(ui.calendarMonth)).length;
     return `<section class="cal-wrap">
